@@ -1,0 +1,33 @@
+import pandas as pd
+import numpy as np
+from scipy.sparse import csr_matrix
+from scipy.spatial.distance import cosine
+from sklearn.metrics.pairwise import pairwise_distances
+
+# Load and preprocess data
+ratings_df = pd.read_csv('ml-1m/ratings.csv')
+user_item_matrix = csr_matrix((ratings_df['rating'], (ratings_df['userId'], ratings_df['movieId'])))
+
+# Calculate user similarity
+user_similarity = 1 - pairwise_distances(user_item_matrix, metric='cosine')
+
+# Neighborhood formation
+num_neighbors = 10
+user_neighbors = {user: np.argsort(similarity)[-num_neighbors:] for user, similarity in enumerate(user_similarity)}
+
+# Prediction
+def recommend(user_id, user_item_matrix, user_neighbors):
+    user_ratings = dict(zip(user_item_matrix.indices[user_item_matrix.indptr[user_id]:user_item_matrix.indptr[user_id+1]], user_item_matrix.data[user_item_matrix.indptr[user_id]:user_item_matrix.indptr[user_id+1]]))
+    similar_users = user_neighbors[user_id]
+    predictions = {}
+    for movie_id in user_item_matrix.indices:
+        if user_id not in user_ratings or movie_id not in user_ratings:
+            similar_user_ratings = {other_user_id: user_item_matrix[other_user_id, movie_id] for other_user_id in similar_users if movie_id in user_item_matrix.getrow(other_user_id).toarray()[0]}
+            similar_user_ratings_sum = sum(user_ratings[other_user_id] * similarity[other_user_id] for other_user_id in similar_user_ratings)
+            predictions[movie_id] = similar_user_ratings_sum / len(similar_user_ratings)
+    return sorted(predictions, key=predictions.get, reverse=True)[:10]
+
+# Example recommendation for a user
+user_id = 1
+recommended_movies = recommend(user_id, user_item_matrix, user_neighbors)
+print(f"Recommendations for User {user_id}: {recommended_movies}")
